@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather Dashboard</title>
+
+<link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="images/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="192x192" href="images/android-chrome-192x192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="images/android-chrome-512x512.png">
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+.glass {
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+</style>
+</head>
+
+<body class="bg-gradient-to-br from-blue-500 to-indigo-800 text-white min-h-screen p-3 sm:p-4">
+
+<div class="max-w-6xl mx-auto">
+
+<!-- 🔰 Header -->
+<div class="flex items-center gap-3 mb-6">
+  <img src="images/logo4.png" alt="Logo" class="w-14 h-14 sm:w-20 sm:h-20 object-contain">
+  <h1 class="text-lg sm:text-xl font-bold">Weather App</h1>
+</div>
+
+<!-- 🔍 Search -->
+<div class="relative mb-6">
+  <input id="cityInput" type="text" placeholder="Search city or village..."
+    class="w-full p-3 rounded-lg text-black outline-none text-sm sm:text-base">
+  <div id="suggestions" class="absolute w-full bg-white text-black rounded-lg mt-1 hidden z-10 max-h-60 overflow-y-auto"></div>
+</div>
+
+<!-- 📍 Button -->
+<button onclick="getLocationWeather()" class="mb-6 w-full sm:w-auto bg-white/20 px-4 py-2 rounded-lg">
+📍 Use Current Location
+</button>
+
+<!-- 🧊 Main Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+
+<!-- 🌤 Current -->
+<div class="glass p-4 sm:p-6 rounded-2xl">
+<h2 id="location" class="text-base sm:text-lg font-bold mb-1"></h2>
+<p id="time" class="text-xs sm:text-sm mb-4"></p>
+
+<div id="temp" class="text-3xl sm:text-5xl"></div>
+<p id="condition"></p>
+<img id="icon" class="w-12 sm:w-16">
+
+<div class="grid grid-cols-2 gap-2 mt-4 text-xs sm:text-sm">
+<div>💧 Humidity: <span id="humidity"></span></div>
+<div>🌬 Wind: <span id="wind"></span></div>
+<div>☀️ UV: <span id="uv"></span></div>
+<div>🌡 Feels: <span id="feels"></span></div>
+<div>👁 Visibility: <span id="vis"></span></div>
+<div>📊 Pressure: <span id="pressure"></span></div>
+</div>
+</div>
+
+<!-- ⏱ Hourly -->
+<div class="glass p-4 sm:p-6 col-span-1 md:col-span-2 rounded-2xl">
+<h2 class="mb-4 font-semibold text-sm sm:text-base">Hourly</h2>
+<div id="hourly" class="flex gap-3 overflow-x-auto pb-2"></div>
+</div>
+
+</div>
+
+<!-- 📅 Forecast -->
+<div class="glass p-4 sm:p-6 rounded-2xl mt-6">
+<h2 class="mb-4 font-semibold text-sm sm:text-base">3 Day Forecast</h2>
+<div id="forecast" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-center"></div>
+</div>
+
+</div>
+
+<script>
+let selectedPlaceName = "";
+const API_KEY = "b2dbad2c9c2947fba5b63052261304";
+const suggestions = document.getElementById("suggestions");
+let selectedCoords = null;
+
+// 🔍 SEARCH
+document.getElementById("cityInput").addEventListener("input", async function() {
+  selectedCoords = null;
+  let query = this.value.trim();
+
+  if (query.length < 2) {
+    suggestions.classList.add("hidden");
+    return;
+  }
+
+  suggestions.innerHTML = `<div class="p-2">Searching...</div>`;
+  suggestions.classList.remove("hidden");
+
+  try {
+    let res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5`);
+    let data = await res.json();
+    let results = data.features;
+
+    if (!results.length) {
+      res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query + " India")}&limit=8`);
+      data = await res.json();
+      results = data.features;
+    }
+
+    suggestions.innerHTML = "";
+
+    if (!results.length) {
+      suggestions.innerHTML = `<div class="p-2 text-gray-500">No results</div>`;
+      return;
+    }
+
+    results.forEach(place => {
+      const name = place.properties.name || "";
+      const city = place.properties.city || "";
+      const state = place.properties.state || "";
+      const country = place.properties.country || "";
+
+      const parts = [name, city, state, country].filter(Boolean);
+      const label = parts.join(", ");
+
+      const div = document.createElement("div");
+      div.className = "p-2 hover:bg-gray-200 cursor-pointer";
+      div.innerText = label;
+
+      div.onclick = () => {
+        cityInput.value = label;
+        suggestions.classList.add("hidden");
+
+        const lon = place.geometry.coordinates[0];
+        const lat = place.geometry.coordinates[1];
+
+        selectedCoords = `${lat},${lon}`;
+        selectedPlaceName = label;
+
+        getWeather(selectedCoords);
+      };
+
+      suggestions.appendChild(div);
+    });
+
+  } catch (err) {
+    suggestions.innerHTML = `<div class="p-2 text-red-500">Error loading</div>`;
+  }
+});
+
+// 🌤 Weather
+async function getWeather(query) {
+  const res = await fetch(`https://api.weatherapi.com/v1/forecast.json?key=${API_KEY}&q=${query}&days=3`);
+  const data = await res.json();
+
+  if (data.error) {
+    alert("Location not found");
+    return;
+  }
+
+  displayCurrent(data);
+  displayHourly(data);
+  displayForecast(data);
+}
+
+// 📍 Location
+function getLocationWeather() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    getWeather(`${pos.coords.latitude},${pos.coords.longitude}`);
+  });
+}
+
+// 📊 Current
+function displayCurrent(data) {
+  const displayName = selectedPlaceName || 
+  `${data.location.name}, ${data.location.region}, ${data.location.country}`;
+
+  document.getElementById("location").innerHTML = `📍 ${displayName}`;
+  document.getElementById("time").innerText = data.location.localtime;
+
+  document.getElementById("temp").innerText = data.current.temp_c + "°C";
+  document.getElementById("condition").innerText = data.current.condition.text;
+  document.getElementById("icon").src = "https:" + data.current.condition.icon;
+
+  document.getElementById("humidity").innerText = data.current.humidity + "%";
+  document.getElementById("wind").innerText = data.current.wind_kph + " km/h";
+  document.getElementById("uv").innerText = data.current.uv;
+  document.getElementById("feels").innerText = data.current.feelslike_c + "°C";
+  document.getElementById("vis").innerText = data.current.vis_km + " km";
+  document.getElementById("pressure").innerText = data.current.pressure_mb + " mb";
+}
+
+// ⏱ Hourly
+function displayHourly(data) {
+  hourly.innerHTML = "";
+  data.forecast.forecastday[0].hour.forEach(h => {
+    hourly.innerHTML += `
+      <div class="glass p-2 text-center min-w-[70px]">
+        <p>${h.time.split(" ")[1]}</p>
+        <img src="https:${h.condition.icon}">
+        <p>${h.temp_c}°</p>
+      </div>`;
+  });
+}
+
+// 📅 Forecast
+function displayForecast(data) {
+  forecast.innerHTML = "";
+  data.forecast.forecastday.forEach(d => {
+    forecast.innerHTML += `
+      <div>
+        <p>${d.date}</p>
+        <img src="https:${d.day.condition.icon}">
+        <p>${d.day.avgtemp_c}°C</p>
+      </div>`;
+  });
+}
+
+// Enter disable
+document.getElementById("cityInput").addEventListener("keypress", function(e){
+  if (e.key === "Enter") {
+    e.preventDefault();
+    alert("Please select a location from suggestions");
+  }
+});
+
+// Close dropdown
+document.addEventListener("click", function(e) {
+  if (!cityInput.contains(e.target) && !suggestions.contains(e.target)) {
+    suggestions.classList.add("hidden");
+  }
+});
+
+// Auto load
+window.onload = getLocationWeather;
+</script>
+
+<footer class="mt-10 py-4 text-center border-t border-white/20 opacity-80">
+  <p class="text-sm">
+    🌦️ Project made with ❤️ by <strong>Dipali Ramesh Shinde</strong>
+  </p>
+  <p class="text-xs mt-1">
+    © 2026 Weather Dashboard. All rights reserved.
+  </p>
+</footer>
+
+</body>
+</html>
